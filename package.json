@@ -1,0 +1,61 @@
+{
+  "name": "@estebanforge/pi-js-review",
+  "version": "1.0.0",
+  "description": "JavaScript code-review tool for Pi. Grades your git diffs against a focused JS flaws rubric (5 sections, 18 entries: equality/coercion, async, mutation/scope, globals/prototypes, security). Each entry has a bad/good pair; the LLM proposes a corrected snippet. Rules are grounded in confirmed online sources (MDN, OWASP, nodebestpractices, clean-code-javascript), documented in the README. Returns categorized findings (Bug / Suggestion / Nit / Good pattern) with an Approve or Request-Changes verdict. Targets .js/.mjs/.cjs. Not a linter; pairs with biome check (or eslint).",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "javascript",
+    "js",
+    "code-review",
+    "code-reviewer",
+    "anti-patterns",
+    "code-smells",
+    "rubric",
+    "security",
+    "git-diff",
+    "biome"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "EstebanForge",
+    "email": "esteban@attitude.cl",
+    "url": "https://actitud.xyz"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EstebanForge/pi-js-review.git"
+  },
+  "type": "module",
+  "files": [
+    "extensions",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-tui": "*",
+    "@types/node": "^22.0.0",
+    "typebox": "*",
+    "typescript": "^5.8.0"
+  }
+}
