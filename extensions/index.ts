@@ -110,12 +110,11 @@ export default function (pi: ExtensionAPI) {
 			// File: literal match. Directory: `:(glob)dir/**/*.ext` filters to JS AND
 			// recurses (a bare dir leaks non-JS files; plain `dir/**/*.js` matches
 			// nothing without the :(glob) magic, since the slash before `**` blocks it).
-			const dir = filePath.replace(/\/+$/, "");
 			const pathspecs: string[] = !filePath
 				? EXTS.map((e) => "*" + e)
 				: hasExt(filePath)
 					? [filePath]
-					: EXTS.map((e) => `:(glob)${dir}/**/*${e}`);
+					: EXTS.map((e) => `:(glob)${filePath.replace(/\/+$/, "")}/**/*${e}`);
 			const gitArgs = [...GIT_PREFIX[mode], ...(ref ? [ref] : []), "--", ...pathspecs];
 
 			const result = await pi.exec("git", gitArgs, { signal, timeout: 30000 });
