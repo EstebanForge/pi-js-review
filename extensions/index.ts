@@ -27,7 +27,7 @@ import type { ExtensionAPI, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -69,6 +69,20 @@ interface JsReviewDetails {
 	truncated: boolean;
 }
 
+// Walk up from `start` to the nearest enclosing .git (directory or file).
+// Returns the containing dir, or null if none — meaning there's no repo to
+// anchor to (the workspace root isn't in one and no ancestor is either).
+function findGitRoot(start: string): string | null {
+	let dir = start;
+	for (let i = 0; i < 64; i++) {
+		if (existsSync(path.join(dir, ".git"))) return dir;
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return null;
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "js_review",
@@ -93,7 +107,7 @@ export default function (pi: ExtensionAPI) {
 				description: "working=unstaged, staged=cached, commit=specific SHA, range=two refs, all=HEAD diff",
 			}),
 			ref: Type.Optional(Type.String({ description: "Commit SHA, branch, or range (e.g. main..HEAD). Required for commit/range." })),
-			path: Type.Optional(Type.String({ description: "Limit to file or directory (e.g. src/api)" })),
+			path: Type.Optional(Type.String({ description: "Limit to file or directory (e.g. src/api). Git runs from this path, so it can point into a nested repo." })),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 			const { mode, ref, path: filePath } = params;
@@ -106,19 +120,59 @@ export default function (pi: ExtensionAPI) {
 				throw new Error(`ref required for ${mode} mode`);
 			}
 
-			// git accepts multiple pathspecs after "--". No path: every JS variant.
-			// File: literal match. Directory: `:(glob)dir/**/*.ext` filters to JS AND
-			// recurses (a bare dir leaks non-JS files; plain `dir/**/*.js` matches
-			// nothing without the :(glob) magic, since the slash before `**` blocks it).
-			const pathspecs: string[] = !filePath
-				? EXTS.map((e) => "*" + e)
-				: hasExt(filePath)
-					? [filePath]
-					: EXTS.map((e) => `:(glob)${filePath.replace(/\/+$/, "")}/**/*${e}`);
+			// Anchor the git invocation to the caller's path. A plain pathspec alone
+			// is insufficient: git must be *run* from inside the target repo, otherwise
+			// a `path` pointing into a nested repo (common in workspaces whose root is
+			// not itself a git repo) yields 'not a git repository'.
+			//
+			// Strategy: resolve `path`, stat it, set `cwd` on the exec, and rebase the
+			// pathspec relative to that cwd. Git pathspecs treat `*` as crossing `/`,
+			// so plain `*.js` (etc.) recurses under cwd — no :(glob) magic needed once
+			// we're standing in the right directory.
+			let gitCwd = process.cwd();
+			let pathspecs: string[] = EXTS.map((e) => "*" + e); // all variants, under cwd
+			if (filePath) {
+				const resolved = path.resolve(gitCwd, filePath);
+				try {
+					if (statSync(resolved).isDirectory()) {
+						gitCwd = resolved;
+						pathspecs = EXTS.map((e) => "*" + e);
+					} else {
+						gitCwd = path.dirname(resolved);
+						pathspecs = [path.basename(resolved)];
+					}
+				} catch (err) {
+					// Re-throw anything that isn't ENOENT (e.g. EACCES) so a permissions
+					// error on a path that exists isn't misread as "deleted file".
+					if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+					// Path doesn't exist on disk (uncommitted deletion, typo, or a path
+					// only meaningful inside a nested repo we can't see from here).
+					// Walk up from its parent dir to a real .git so deletions inside a
+					// nested repo still anchor correctly; if no repo is reachable, gitCwd
+					// stays at the workspace root and git will fail with the hint below.
+					const root = findGitRoot(path.dirname(resolved));
+					if (root) {
+						gitCwd = root;
+						const rel = path.relative(root, resolved).replace(/\\/g, "/");
+						pathspecs = hasExt(resolved)
+							? [rel]
+							: EXTS.map((e) => `:(glob)${rel.replace(/\/+$/, "")}/**/*${e}`);
+					} else {
+						pathspecs = hasExt(filePath)
+							? [filePath]
+							: EXTS.map((e) => `:(glob)${filePath.replace(/\/+$/, "")}/**/*${e}`);
+					}
+				}
+			}
 			const gitArgs = [...GIT_PREFIX[mode], ...(ref ? [ref] : []), "--", ...pathspecs];
 
-			const result = await pi.exec("git", gitArgs, { signal, timeout: 30000 });
-			if (result.code !== 0) throw new Error(`git failed (${result.code}): ${result.stderr}`);
+			const result = await pi.exec("git", gitArgs, { cwd: gitCwd, signal, timeout: 30000 });
+			if (result.code !== 0) {
+				const hint = /not a git repository/i.test(result.stderr)
+					? " — the working directory is not inside a git repo; pass `path` pointing into the repo (a file or dir)."
+					: "";
+				throw new Error(`git failed (${result.code}): ${result.stderr}${hint}`);
+			}
 
 			const base = { mode, ref, path: filePath };
 			if (!result.stdout.trim()) {

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.1 — 2026-06-30
+
+### Fixed
+- **`path` into a nested git repo failed**: `git` was always run from the
+  agent's workspace root (via `pi.exec` without `cwd`), so a `path` pointing
+  into a nested repo — whose workspace root is not itself a git repo (e.g. a
+  package under `src/...` in a multi-repo workspace) — errored `not a git
+  repository`. The tool now resolves `path`, stats it, sets `cwd` on the git
+  invocation, and rebases the pathspec array (`.js`/`.mjs`/`.cjs`) relative
+  to that directory. Git pathspecs treat `*` as crossing `/`, so plain
+  `*.js` (etc.) recurses under the new cwd.
+- **Deleted files in a nested repo now resolve**: when the `path` no longer
+  exists on disk (uncommitted deletion), the tool walks up from the parent
+  dir to the nearest `.git` and anchors there, instead of falling back to
+  the workspace root. Non-`ENOENT` errors (e.g. `EACCES`) are re-thrown
+  rather than misread as a deletion.
+- **Clearer failure mode**: when the working directory isn't inside any git
+  repo, the thrown error now appends a hint to pass `path` pointing into the
+  repo.
+
 ## 1.0.0 — 2026-06-23
 
 Initial release. A Pi-native JavaScript code review tool, sibling to

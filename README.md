@@ -24,7 +24,7 @@ The tool runs `git` in one of five modes:
 | `commit` | A specific commit | Yes (SHA) |
 | `range` | A commit range | Yes (e.g. `main..HEAD`) |
 
-Narrow scope with `path` (a file or directory).
+Narrow scope with `path` (a file or directory). The tool runs `git` **from** that path — so `path` can point into a nested repo (e.g. a package inside a workspace whose root is not itself a git repo).
 
 ## What it does
 
